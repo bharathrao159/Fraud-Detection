@@ -1,0 +1,86 @@
+### Step 1: Import Libraries and Load Data
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import mlflow
+import mlflow.sklearn
+
+# Load dataset
+data = pd.read_csv('fraud_data.csv')
+X = data.drop('is_fraud', axis=1)
+y = data['is_fraud']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+### Step 2: Train Fraud Detection Model with MLflow Logging
+
+mlflow.set_experiment("fraud_detection")
+with mlflow.start_run():
+    model = RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    acc = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    
+    # Log parameters and metrics
+    mlflow.log_param("n_estimators", 200)
+    mlflow.log_param("max_depth", 10)
+    mlflow.log_metric("accuracy", acc)
+    mlflow.log_metric("precision", precision)
+    mlflow.log_metric("recall", recall)
+    mlflow.log_metric("f1_score", f1)
+    
+    # Log model
+    mlflow.sklearn.log_model(model, "fraud_detection_model")
+    print(f"Model performance - Accuracy: {acc}, Precision: {precision}, Recall: {recall}, F1-score: {f1}")
+
+### Step 3: Save Model for Deployment
+import pickle
+pickle.dump(model, open("fraud_model.pkl", "wb"))
+
+### Step 4: Build API for Real-Time Fraud Detection
+
+from flask import Flask, request, jsonify
+import numpy as np
+
+app = Flask(__name__)
+model = pickle.load(open("fraud_model.pkl", "rb"))
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.json['features']
+    prediction = model.predict(np.array(data).reshape(1, -1))
+    return jsonify({'fraud_prediction': int(prediction[0])})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+
+### Step 5: Automate Deployment with CI/CD
+
+GITHUB_ACTIONS = '''
+name: Deploy Fraud Detection Model
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+      - name: Build Docker Image
+        run: |
+          docker build -t fraud_detection_model .
+          docker run -p 5000:5000 fraud_detection_model
+'''
+with open(".github/workflows/deploy.yml", "w") as file:
+    file.write(GITHUB_ACTIONS)
+
+print("Fraud Detection Pipeline Ready!")
